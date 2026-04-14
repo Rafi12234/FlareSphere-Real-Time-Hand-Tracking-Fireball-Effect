@@ -102,11 +102,85 @@ export default function App() {
       return detectorMapRef.current.get(handKey);
     };
 
-    const normalizeHandKey = (handedness, index) => {
+    const getHandLabel = (handedness, index) => {
       const label = (handedness || `Hand-${index}`).toLowerCase();
       if (label.includes("left")) return "Left";
       if (label.includes("right")) return "Right";
-      return `Hand-${index}`;
+      return "Unknown";
+    };
+
+    const estimatePalmCenter = (landmarks) => {
+      const points = [landmarks[0], landmarks[5], landmarks[9], landmarks[13], landmarks[17]];
+      const count = points.length || 1;
+      const sum = points.reduce(
+        (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
+        { x: 0, y: 0 }
+      );
+
+      return { x: sum.x / count, y: sum.y / count };
+    };
+
+    const buildHandsLookup = (hands) => {
+      const previousSummaries = previousHandsRef.current;
+      const usedPreviousKeys = new Set();
+      const freshLabelCounters = new Map();
+      const handsByKey = new Map();
+      const MAX_REASSIGN_DISTANCE = 0.22;
+
+      const detections = hands
+        .map((hand, index) => {
+          const label = getHandLabel(hand.handedness, index);
+          return {
+            ...hand,
+            index,
+            label,
+            palmCenter: estimatePalmCenter(hand.landmarks),
+          };
+        })
+        .sort((a, b) => {
+          if (a.label !== b.label) return a.label.localeCompare(b.label);
+          return a.palmCenter.x - b.palmCenter.x;
+        });
+
+      detections.forEach((detection) => {
+        let matchedKey = null;
+        let matchedDistance = Number.POSITIVE_INFINITY;
+
+        previousSummaries.forEach((summary, key) => {
+          if (usedPreviousKeys.has(key)) return;
+
+          const keyLabel = String(key).split("#")[0];
+          if (keyLabel !== detection.label) return;
+
+          const distance = distanceBetween(summary.palmCenter, detection.palmCenter);
+          if (distance < matchedDistance) {
+            matchedDistance = distance;
+            matchedKey = key;
+          }
+        });
+
+        if (matchedKey && matchedDistance <= MAX_REASSIGN_DISTANCE) {
+          usedPreviousKeys.add(matchedKey);
+          handsByKey.set(matchedKey, {
+            ...detection,
+            handedness: detection.label,
+            key: matchedKey,
+          });
+          return;
+        }
+
+        const nextIndex = (freshLabelCounters.get(detection.label) ?? 0) + 1;
+        freshLabelCounters.set(detection.label, nextIndex);
+
+        const newKey = `${detection.label}#${nextIndex}`;
+        handsByKey.set(newKey, {
+          ...detection,
+          handedness: detection.label,
+          key: newKey,
+        });
+      });
+
+      return handsByKey;
     };
 
     const drawTransferEffects = (ctx, timestamp) => {
@@ -308,7 +382,6 @@ export default function App() {
       lastTimestampRef.current = timestamp;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const handLookup = new Map();
       let frameTracker = "Tracking";
       let currentSummaries = [];
 
@@ -317,14 +390,7 @@ export default function App() {
         const hands = detection?.hands ?? [];
 
         if (hands.length) {
-          hands.forEach((hand, index) => {
-            const handKey = normalizeHandKey(hand.handedness, index);
-            handLookup.set(handKey, {
-              ...hand,
-              handedness: hand.handedness,
-              key: handKey,
-            });
-          });
+          const handLookup = buildHandsLookup(hands);
 
           currentSummaries = updateFrameEffects(handLookup, deltaTime, timestamp);
 
@@ -346,7 +412,7 @@ export default function App() {
           }
         } else {
           frameTracker = "No hand in frame";
-          currentSummaries = updateFrameEffects(handLookup, deltaTime, timestamp);
+          currentSummaries = updateFrameEffects(new Map(), deltaTime, timestamp);
         }
       } catch (err) {
         frameTracker = "Tracker error";
