@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Rajdhani", "Segoe UI", Tahoma, sans-serif;
+}
+
+.scifi-bg {
+  background:
+    radial-gradient(circle at 10% 20%, rgba(10, 46, 84, 0.5), transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(12, 39, 76, 0.55), transparent 45%),
+    linear-gradient(140deg, #030711, #051221);
+}
+
+.scan-lines {
+  pointer-events: none;
+  background-image: linear-gradient(rgba(164, 222, 255, 0.08) 1px, transparent 1px);
+  background-size: 100% 4px;
+  mix-blend-mode: screen;
+  opacity: 0.25;
+}
+
+input[type="range"] {
+  accent-color: #5de2ff;
+}
